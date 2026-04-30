@@ -1,0 +1,12 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "payRunHistory",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "savedAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

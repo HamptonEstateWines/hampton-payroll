@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default":     "hamptons-portal",
+    "production":  "hamptons-portal",
+    "development": "hamptons-portal",
+    "test":        "hamptons-portal"
+  },
+  "targets": {
+    "hamptons-portal": {
+      "hosting": {
+        "payroll": ["hamptons-payroll"]
+      }
+    }
+  }
+}

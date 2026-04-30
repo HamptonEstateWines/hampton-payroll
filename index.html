@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hampton Estate Wines — Payroll Tool</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --bg:#f0f5f7;--surface:#fff;--surface2:#e8f1f5;--border:#c8dde6;--border2:#a8c4d0;
@@ -176,6 +178,22 @@ tbody tr.sal-row{background:#f0f7fa}
 .modal-close:hover{background:var(--surface2)}
 .modal-footer{display:flex;gap:8px;justify-content:flex-end;margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)}
 
+/* ── COMPLETE SECTION ── */
+.complete-section{margin-top:2rem;border-top:2px solid var(--border);padding-top:1.5rem}
+.complete-box{background:var(--green-light);border:2px solid var(--green-border);border-radius:var(--radius);padding:1.5rem 2rem;display:flex;align-items:center;justify-content:space-between;gap:1.5rem;flex-wrap:wrap}
+.complete-box.done{background:var(--green-light);border-color:var(--green);opacity:.85}
+.complete-label{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--green);margin-bottom:4px}
+.complete-title{font-size:18px;font-weight:600;color:var(--green);margin-bottom:4px}
+.complete-sub{font-size:13px;color:var(--text2);line-height:1.5}
+.btn-complete{background:var(--green);color:#fff;border-color:var(--green);padding:12px 28px;font-size:14px;font-weight:600;border-radius:var(--radius);white-space:nowrap}
+.btn-complete:hover{opacity:.88;background:var(--green)}
+.complete-confirm{background:var(--surface);border:1px solid var(--green-border);border-radius:var(--radius);padding:1rem 1.25rem;margin-top:1rem}
+.complete-confirm-head{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.complete-check{width:36px;height:36px;background:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;flex-shrink:0}
+.complete-steps{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.complete-step{display:flex;align-items:baseline;gap:10px;font-size:13px;color:var(--text)}
+.complete-step-num{width:20px;height:20px;background:var(--green-light);border:1px solid var(--green-border);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--green);flex-shrink:0}
+
 /* ── PRINT STYLES ── */
 @media print{
   .header,.nav-btn,.btn,.tabs,.hist-actions,.modal-overlay{display:none!important}
@@ -336,6 +354,40 @@ tbody tr.sal-row{background:#f0f7fa}
   <div id="tab-detail" style="display:none">
     <div class="detail-grid" id="detail-grid"></div>
   </div>
+
+  <!-- ══ SUBMIT & COMPLETE ══ -->
+  <div class="complete-section" id="complete-section">
+    <div class="complete-box" id="complete-box">
+      <div>
+        <div class="complete-label">Final step</div>
+        <div class="complete-title">Submit &amp; Mark Pay Run Complete</div>
+        <div class="complete-sub">Once you have reviewed the results above, click to save this pay run and mark it as complete. This records the submission and stores it to history.</div>
+      </div>
+      <button class="btn btn-complete" id="complete-btn" onclick="submitComplete()">
+        ✓ &nbsp;Submit &amp; Complete
+      </button>
+    </div>
+    <div class="complete-confirm" id="complete-confirm" style="display:none">
+      <div class="complete-confirm-head">
+        <div class="complete-check">✓</div>
+        <div>
+          <div style="font-weight:600;font-size:15px;color:var(--green)">Pay run submitted and saved</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px" id="complete-meta"></div>
+        </div>
+      </div>
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Next steps</div>
+      <div class="complete-steps">
+        <div class="complete-step"><div class="complete-step-num">1</div><span>Load the pay hours into <strong>MYOB</strong> using the MYOB Summary table above</span></div>
+        <div class="complete-step"><div class="complete-step-num">2</div><span>Notify <strong>Lynda</strong> that pays are ready to be processed — <a href="mailto:accounts@hamptonestatewines.com.au" style="color:var(--accent)">accounts@hamptonestatewines.com.au</a> · 0419 710 010</span></div>
+        <div class="complete-step"><div class="complete-step-num">3</div><span>Lynda will process the bank payments through <strong>NAB</strong> on Thursday</span></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+        <button class="btn btn-sm" onclick="window.print()">Print report</button>
+        <button class="btn btn-sm" onclick="copyCSV()">Copy CSV</button>
+        <button class="btn btn-sm btn-accent" onclick="newRun()">Start new pay run</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ══ HISTORY ══ -->
@@ -391,6 +443,91 @@ tbody tr.sal-row{background:#f0f7fa}
 
 <script>
 // ═══════════════════════════════════════════════════════
+// FIREBASE — environment-aware setup
+// ═══════════════════════════════════════════════════════
+const _IS_DEV  = ['localhost','127.0.0.1'].includes(location.hostname);
+const _IS_TEST = location.hostname.includes('--'); // Firebase Hosting preview channel
+
+// ⚠️  Fill in apiKey, messagingSenderId, appId from Firebase Console
+//     Run:  firebase login --reauth
+//     Then: firebase apps:sdkconfig web
+const FIREBASE_CONFIG = {
+  apiKey:            'AIzaSyDavdRnx6Qeqx93t_mwnwIVi5yig6pRcEQ',
+  authDomain:        'hamptons-portal.firebaseapp.com',
+  projectId:         'hamptons-portal',
+  storageBucket:     'hamptons-portal.firebasestorage.app',
+  messagingSenderId: '281613052921',
+  appId:             '1:281613052921:web:c888adc1b0ba25fbd96b28',
+};
+
+let _db = null, _fbReady = false;
+let _empCache = null, _histCache = null;
+
+(function _initFirebase() {
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    _db = firebase.firestore();
+    if (_IS_DEV) {
+      _db.useEmulator('localhost', 8080);
+      console.log('[Firebase] emulator mode (localhost:8080)');
+    }
+    _fbReady = FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY';
+    if (_fbReady) console.log('[Firebase] ready —', _IS_DEV ? 'dev' : _IS_TEST ? 'test' : 'production');
+    else console.info('[Firebase] placeholder config — add API key to enable cloud sync');
+  } catch(e) { console.warn('[Firebase] init skipped:', e.message); }
+})();
+
+async function _syncFromFirestore() {
+  if (!_fbReady) return;
+  try {
+    const [empSnap, histSnap] = await Promise.all([
+      _db.collection('employees').get(),
+      _db.collection('payRunHistory').orderBy('savedAt','desc').get(),
+    ]);
+    if (!empSnap.empty) {
+      _empCache = empSnap.docs.map(d => d.data());
+      localStorage.setItem(STORE_EMP, JSON.stringify(_empCache));
+    } else {
+      await _pushEmployees(_empCache || loadEmployees());
+    }
+    if (!histSnap.empty) {
+      _histCache = histSnap.docs.map(d => d.data());
+      localStorage.setItem(STORE_HIST, JSON.stringify(_histCache));
+    }
+    updateDashStats();
+    if (document.getElementById('page-register').classList.contains('active')) buildRegister();
+    if (document.getElementById('page-history').classList.contains('active')) buildHistory();
+  } catch(e) { console.warn('[Firebase] sync failed:', e); }
+}
+
+async function _pushEmployees(arr) {
+  if (!_fbReady || !arr) return;
+  const batch = _db.batch();
+  arr.forEach(e => batch.set(_db.collection('employees').doc(e.id), e));
+  await batch.commit();
+}
+async function _syncEmployees(arr) {
+  if (!_fbReady) return;
+  try {
+    const batch = _db.batch();
+    const snap = await _db.collection('employees').get();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    arr.forEach(e => batch.set(_db.collection('employees').doc(e.id), e));
+    await batch.commit();
+  } catch(e) { console.warn('[Firebase] saveEmployees:', e); }
+}
+async function _syncHistory(arr) {
+  if (!_fbReady) return;
+  try {
+    const batch = _db.batch();
+    const snap = await _db.collection('payRunHistory').get();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    arr.forEach(h => batch.set(_db.collection('payRunHistory').doc(h.id), h));
+    await batch.commit();
+  } catch(e) { console.warn('[Firebase] saveHistory:', e); }
+}
+
+// ═══════════════════════════════════════════════════════
 // STORAGE KEYS
 // ═══════════════════════════════════════════════════════
 const STORE_EMP  = 'hew_employees';
@@ -423,17 +560,30 @@ const SEED_EMPLOYEES = [
 ];
 
 // ═══════════════════════════════════════════════════════
-// DATA ACCESS
+// DATA ACCESS  (in-memory cache → localStorage → Firestore)
 // ═══════════════════════════════════════════════════════
 function loadEmployees() {
+  if (_empCache) return _empCache;
   const raw = localStorage.getItem(STORE_EMP);
-  if (raw) return JSON.parse(raw);
-  localStorage.setItem(STORE_EMP, JSON.stringify(SEED_EMPLOYEES));
-  return SEED_EMPLOYEES;
+  _empCache = raw ? JSON.parse(raw) : [...SEED_EMPLOYEES];
+  if (!raw) localStorage.setItem(STORE_EMP, JSON.stringify(SEED_EMPLOYEES));
+  return _empCache;
 }
-function saveEmployees(arr) { localStorage.setItem(STORE_EMP, JSON.stringify(arr)); }
-function loadHistory()      { return JSON.parse(localStorage.getItem(STORE_HIST)||'[]'); }
-function saveHistory(arr)   { localStorage.setItem(STORE_HIST, JSON.stringify(arr)); }
+function saveEmployees(arr) {
+  _empCache = arr;
+  localStorage.setItem(STORE_EMP, JSON.stringify(arr));
+  _syncEmployees(arr);
+}
+function loadHistory() {
+  if (_histCache) return _histCache;
+  _histCache = JSON.parse(localStorage.getItem(STORE_HIST) || '[]');
+  return _histCache;
+}
+function saveHistory(arr) {
+  _histCache = arr;
+  localStorage.setItem(STORE_HIST, JSON.stringify(arr));
+  _syncHistory(arr);
+}
 
 // ═══════════════════════════════════════════════════════
 // STATE
@@ -903,24 +1053,52 @@ function renderResults(){
 // ═══════════════════════════════════════════════════════
 // SAVE PAY RUN
 // ═══════════════════════════════════════════════════════
-function savePayRun(){
+let _savedRunId = null;
+
+function savePayRun(opts={}){
   if(!results.length){alert('No results to save.');return;}
   const hist=loadHistory();
-  const id='pr'+Date.now();
+  // avoid duplicates — update existing record if already saved this session
+  const id = _savedRunId || 'pr'+Date.now();
+  _savedRunId = id;
   const totHrs=results.reduce((s,r)=>s+r.total,0);
   const totWd=results.filter(r=>!r.salaried).reduce((s,r)=>s+r.wdHrs,0);
   const totWe=results.filter(r=>!r.salaried).reduce((s,r)=>s+r.weHrs,0);
   const u21alc=results.filter(r=>r.u21&&(r.alcWd+r.alcWe)>0).map(r=>r.name);
-  hist.unshift({
-    id,period:currentPeriod,savedAt:new Date().toLocaleString('en-AU'),
-    staff:results.length,totalHrs:totHrs,wdHrs:totWd,weHrs:totWe,
-    u21alcFlags:u21alc,results:results.map(r=>({...r,shifts:undefined}))
-  });
+  const record = {
+    id, period:currentPeriod, savedAt:new Date().toLocaleString('en-AU'),
+    staff:results.length, totalHrs:totHrs, wdHrs:totWd, weHrs:totWe,
+    u21alcFlags:u21alc, results:results.map(r=>({...r,shifts:undefined})),
+    completed: opts.completed || false,
+    completedAt: opts.completed ? new Date().toLocaleString('en-AU') : null,
+  };
+  const existing = hist.findIndex(r=>r.id===id);
+  if(existing>-1) hist[existing]=record; else hist.unshift(record);
   saveHistory(hist);
-  const banner=document.getElementById('save-banner');
-  banner.style.display='flex';
-  setTimeout(()=>banner.style.display='none',3000);
+  if(!opts.completed){
+    const banner=document.getElementById('save-banner');
+    banner.style.display='flex';
+    setTimeout(()=>banner.style.display='none',3000);
+  }
   updateDashStats();
+  return record;
+}
+
+function submitComplete(){
+  if(!results.length){alert('No results to submit — complete a pay run first.');return;}
+  const record = savePayRun({completed:true});
+  // Update button area
+  const box=document.getElementById('complete-box');
+  box.classList.add('done');
+  document.getElementById('complete-btn').textContent='✓  Submitted';
+  document.getElementById('complete-btn').disabled=true;
+  document.getElementById('complete-btn').style.opacity='0.6';
+  // Show confirmation
+  const conf=document.getElementById('complete-confirm');
+  document.getElementById('complete-meta').textContent=
+    'Saved · '+record.savedAt+' · '+record.staff+' staff · '+record.totalHrs.toFixed(2)+' total hrs';
+  conf.style.display='';
+  conf.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 // ═══════════════════════════════════════════════════════
@@ -938,11 +1116,12 @@ function buildHistory(){
   hist.forEach(run=>{
     const card=document.createElement('div');card.className='hist-card';
     const u21warn=run.u21alcFlags&&run.u21alcFlags.length?`<span class="badge badge-red">⚠ Under-21 alc: ${run.u21alcFlags.join(', ')}</span>`:'';
+    const completeBadge=run.completed?`<span class="badge badge-green">✓ Complete</span>`:`<span class="badge badge-grey">Draft</span>`;
     card.innerHTML=`
       <div class="hist-card-header">
         <div>
-          <div class="hist-title">${run.period}</div>
-          <div class="hist-meta">Saved ${run.savedAt} &nbsp;·&nbsp; ${run.staff} employee${run.staff!==1?'s':''} ${u21warn}</div>
+          <div class="hist-title" style="display:flex;align-items:center;gap:8px">${run.period} ${completeBadge}</div>
+          <div class="hist-meta">Saved ${run.savedAt}${run.completedAt?' &nbsp;·&nbsp; Submitted '+run.completedAt:''} &nbsp;·&nbsp; ${run.staff} employee${run.staff!==1?'s':''} ${u21warn}</div>
         </div>
         <div class="hist-actions">
           <button class="btn btn-sm" onclick="printHistRun('${run.id}')">Print report</button>
@@ -1017,9 +1196,19 @@ function copyCSV(){
 // ═══════════════════════════════════════════════════════
 function newRun(){
   parsedShifts=[];allAreas=[];alcoholAreas=new Set();unmatchedNames=[];results=[];alcEntry={};currentPeriod='';
+  _savedRunId=null;
   document.getElementById('file-input').value='';
+  // reset completion section
+  const box=document.getElementById('complete-box');
+  box.classList.remove('done');
+  const btn=document.getElementById('complete-btn');
+  btn.textContent='✓  Submit & Complete'; btn.disabled=false; btn.style.opacity='';
+  document.getElementById('complete-confirm').style.display='none';
   goPage('upload');
 }
+
+// ── Startup ──
+_syncFromFirestore();
 </script>
 </body>
 </html>
