@@ -303,6 +303,9 @@ tbody tr.sal-row{background:#f0f7fa}
 
 <!-- ══ ALCOHOL ENTRY ══ -->
 <div class="page" id="page-alc-entry">
+  <div id="amend-banner" style="display:none;background:var(--amber-light);border:1px solid var(--amber-border);border-radius:var(--radius);padding:10px 14px;margin-bottom:1rem;font-size:13px;color:var(--amber);display:none">
+    ✏️ <strong>Amending pay run:</strong> <span id="amend-period"></span> — adjust alcohol hours below then click Calculate to update.
+  </div>
   <div class="step-label">Step 3 of 4</div>
   <div class="step-title">Enter alcohol hours</div>
   <div class="step-sub">Enter total weekday and weekend alcohol hours for each casual employee.</div>
@@ -591,6 +594,7 @@ function saveHistory(arr) {
 let parsedShifts=[], allAreas=[], alcoholAreas=new Set();
 let unmatchedNames=[], results=[], alcEntry={};
 let editingEmpId=null, currentPeriod='';
+let _amendingRunId=null; // non-null when re-opening a historical run for amendment
 
 // ═══════════════════════════════════════════════════════
 // HELPERS
@@ -941,8 +945,11 @@ function setAlcVal(nid,type,val,max){
 function calculate(){
   if(document.querySelectorAll('.alc-input.error').length){alert('Some alcohol entries exceed the shift total. Fix red fields first.');return;}
   const refDate=parsedShifts.map(r=>r.date).sort().pop();
-  const dates=parsedShifts.map(r=>r.date).sort();
-  currentPeriod=fmtDate(dates[0])+' — '+fmtDate(dates[dates.length-1]);
+  // When amending a historical run, keep the original period
+  if(!_amendingRunId){
+    const dates=parsedShifts.map(r=>r.date).sort();
+    currentPeriod=fmtDate(dates[0])+' — '+fmtDate(dates[dates.length-1]);
+  }
   document.getElementById('results-period').textContent=currentPeriod;
 
   results=[...new Set(parsedShifts.map(r=>r.name))].sort().map(name=>{
@@ -1124,6 +1131,7 @@ function buildHistory(){
           <div class="hist-meta">Saved ${run.savedAt}${run.completedAt?' &nbsp;·&nbsp; Submitted '+run.completedAt:''} &nbsp;·&nbsp; ${run.staff} employee${run.staff!==1?'s':''} ${u21warn}</div>
         </div>
         <div class="hist-actions">
+          <button class="btn btn-sm btn-accent" onclick="reopenHistRun('${run.id}')">✏️ Reopen &amp; Amend</button>
           <button class="btn btn-sm" onclick="printHistRun('${run.id}')">Print report</button>
           <button class="btn btn-sm" onclick="copyHistCSV('${run.id}')">Copy CSV</button>
           <button class="btn btn-sm btn-danger" onclick="deleteHistRun('${run.id}')">Delete</button>
@@ -1142,6 +1150,47 @@ function deleteHistRun(id){
   if(!confirm('Delete this saved pay run? This cannot be undone.'))return;
   saveHistory(loadHistory().filter(r=>r.id!==id));
   buildHistory();updateDashStats();
+}
+
+function reopenHistRun(id){
+  const run=getHistRun(id);
+  if(!run)return;
+
+  // Restore amendment state
+  _amendingRunId=id;
+  _savedRunId=id;
+  currentPeriod=run.period;
+
+  // Synthetic dates: a Monday (WD) and Sunday (WE) as placeholders
+  const WD='2026-01-05', WE_D='2026-01-04';
+
+  // Rebuild parsedShifts & alcEntry from saved results
+  parsedShifts=[];alcEntry={};unmatchedNames=[];
+  (run.results||[]).forEach(r=>{
+    alcEntry[r.name]={wd:r.alcWd||0,we:r.alcWe||0};
+    if(r.salaried){
+      parsedShifts.push({name:r.name,date:WD,start:'09:00',end:'17:00',hours:r.total,area:(r.areas&&r.areas[0])||'All'});
+    } else {
+      if(r.wdHrs>0) parsedShifts.push({name:r.name,date:WD,start:'09:00',end:'17:00',hours:r.wdHrs,area:(r.areas&&r.areas[0])||'All'});
+      if(r.weHrs>0) parsedShifts.push({name:r.name,date:WE_D,start:'09:00',end:'17:00',hours:r.weHrs,area:(r.areas&&r.areas[0])||'All'});
+    }
+  });
+
+  allAreas=[...new Set(parsedShifts.map(r=>r.area))].sort();
+  alcoholAreas=new Set(allAreas.filter(a=>{const al=a.toLowerCase();return al.includes('floor')||al.includes('wedding')||al.includes('bar')||al.includes('beverage');}));
+
+  // Reset completion UI
+  const box=document.getElementById('complete-box');
+  box.classList.remove('done');
+  const btn=document.getElementById('complete-btn');
+  btn.textContent='✓  Submit & Complete';btn.disabled=false;btn.style.opacity='';
+  document.getElementById('complete-confirm').style.display='none';
+
+  // Show amendment banner
+  document.getElementById('amend-period').textContent=run.period;
+  document.getElementById('amend-banner').style.display='';
+
+  goToAlcEntry();
 }
 
 function getHistRun(id){return loadHistory().find(r=>r.id===id);}
@@ -1197,6 +1246,8 @@ function copyCSV(){
 function newRun(){
   parsedShifts=[];allAreas=[];alcoholAreas=new Set();unmatchedNames=[];results=[];alcEntry={};currentPeriod='';
   _savedRunId=null;
+  _amendingRunId=null;
+  document.getElementById('amend-banner').style.display='none';
   document.getElementById('file-input').value='';
   // reset completion section
   const box=document.getElementById('complete-box');
